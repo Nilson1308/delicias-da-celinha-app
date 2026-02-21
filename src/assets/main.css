@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply text-touch antialiased font-sans;
+  }
+  body {
+    @apply bg-brand-cream text-brand-brown min-h-screen;
+  }
+}
+
+@layer utilities {
+  input, select, textarea {
+    font-size: 1rem;
+  }
+}
