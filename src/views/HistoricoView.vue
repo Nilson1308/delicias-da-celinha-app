@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useFinanceStore } from '@/stores/finance'
-import { History, TrendingUp, TrendingDown, Wallet, Plus, X } from 'lucide-vue-next'
+import { History, TrendingUp, TrendingDown, Wallet, Plus, X, Trash2 } from 'lucide-vue-next'
 
 const financeStore = useFinanceStore()
 
@@ -15,6 +15,8 @@ const groupedByDate = computed(() => financeStore.transactionsGroupedByDate)
 const showExpenseModal = ref(false)
 const expenseDescription = ref('')
 const expenseAmount = ref('')
+const showToast = ref(false)
+let toastTimer = null
 
 function openExpenseModal() {
   expenseDescription.value = ''
@@ -47,6 +49,21 @@ function formatDateLabel(label) {
 
 function isSale(t) {
   return t.type === 'SALE'
+}
+
+function confirmRemoveTransaction(id, amount) {
+  const msg = `Tem certeza que quer apagar este lançamento de ${formatBRL(amount)}?`
+  if (!window.confirm(msg)) return
+  financeStore.removeTransaction(id)
+  showToastMessage()
+}
+
+function showToastMessage() {
+  showToast.value = true
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    showToast.value = false
+  }, 2500)
 }
 </script>
 
@@ -121,6 +138,14 @@ function isSale(t) {
             {{ formatBRL(sale.total) }}
           </p>
         </div>
+        <button
+          type="button"
+          class="min-w-[40px] min-h-[40px] p-2 rounded-xl text-red-400 hover:bg-red-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-300"
+          :aria-label="`Excluir lançamento de ${formatBRL(sale.total)}`"
+          @click="confirmRemoveTransaction(sale.id, sale.total)"
+        >
+          <Trash2 class="w-5 h-5" stroke-width="2" />
+        </button>
       </li>
     </ul>
     <div v-else class="rounded-2xl bg-ui-white shadow-soft p-4 mb-8">
@@ -163,12 +188,22 @@ function isSale(t) {
                 </p>
               </div>
             </div>
-            <p
-              class="font-bold shrink-0 text-sm"
-              :class="isSale(tx) ? 'text-brand-red' : 'text-brand-brown'"
-            >
-              {{ isSale(tx) ? '+' : '-' }}{{ formatBRL(tx.amount) }}
-            </p>
+            <div class="flex items-center gap-1 shrink-0">
+              <p
+                class="font-bold text-sm"
+                :class="isSale(tx) ? 'text-brand-red' : 'text-brand-brown'"
+              >
+                {{ isSale(tx) ? '+' : '-' }}{{ formatBRL(tx.amount) }}
+              </p>
+              <button
+                type="button"
+                class="min-w-[40px] min-h-[40px] p-2 rounded-xl text-red-400 hover:bg-red-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-300"
+                :aria-label="`Excluir lançamento de ${formatBRL(tx.amount)}`"
+                @click="confirmRemoveTransaction(tx.id, tx.amount)"
+              >
+                <Trash2 class="w-5 h-5" stroke-width="2" />
+              </button>
+            </div>
           </li>
         </ul>
       </section>
@@ -252,5 +287,29 @@ function isSale(t) {
         </div>
       </div>
     </Teleport>
+
+    <!-- Toast: Lançamento apagado -->
+    <Transition name="toast">
+      <div
+        v-if="showToast"
+        class="fixed bottom-24 left-4 right-4 z-50 rounded-2xl bg-brand-brown text-ui-white px-4 py-3 text-center font-semibold shadow-soft-lg"
+        role="status"
+        aria-live="polite"
+      >
+        Lançamento apagado!
+      </div>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+</style>

@@ -183,8 +183,8 @@ export const useFinanceStore = defineStore('finance', {
       saveToStorage(this.transactions)
     },
 
-    /** Remove uma transação. */
-    remove(id) {
+    /** Remove uma transação por ID. Atualiza saldo e histórico via reatividade. */
+    removeTransaction(id) {
       this.transactions = this.transactions.filter((t) => t.id !== id)
       saveToStorage(this.transactions)
     }

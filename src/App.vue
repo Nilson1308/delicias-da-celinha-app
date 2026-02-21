@@ -1,6 +1,7 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { HandCoins, History, Package } from 'lucide-vue-next'
+import InstallAppButton from '@/components/InstallAppButton.vue'
 
 const route = useRoute()
 
@@ -13,6 +14,7 @@ const navItems = [
 
 <template>
   <div class="min-h-screen bg-brand-cream">
+    <InstallAppButton />
     <RouterView />
     <nav
       class="fixed bottom-0 left-0 right-0 h-20 z-50 bg-white border-t border-brand-brown/10 flex pb-safe-bottom shadow-soft-lg"
