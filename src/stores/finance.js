@@ -8,10 +8,22 @@
  *   description: string
  *   date: string
  *   items?: CartItem[]
+ *   status: 'PAID' | 'PENDING'
+ *   dueDate?: string
+ *   saleType: 'DIRECT' | 'RESALE'
+ *   clientName?: string
  * }} Transaction
  *
  * @typedef {{ dateStr: string, dateLabel: string, transactions: Transaction[] }} GroupByDate
  */
+
+function normalizeTransaction(t) {
+  return {
+    ...t,
+    status: t.status ?? 'PAID',
+    saleType: t.saleType ?? 'DIRECT'
+  }
+}
 
 import { defineStore } from 'pinia'
 
@@ -27,7 +39,7 @@ function loadFromStorage() {
       if (raw) {
         const parsed = JSON.parse(raw)
         const list = parsed?.state?.transactions ?? parsed?.transactions ?? []
-        const migrated = list.map((t) => ({
+        const migrated = list.map((t) => normalizeTransaction({
           ...t,
           type: t.type === 'income' ? 'SALE' : t.type === 'expense' ? 'EXPENSE' : t.type
         }))
@@ -37,7 +49,8 @@ function loadFromStorage() {
       return []
     }
     const parsed = JSON.parse(raw)
-    return parsed?.state?.transactions ?? parsed?.transactions ?? []
+    const list = parsed?.state?.transactions ?? parsed?.transactions ?? []
+    return list.map(normalizeTransaction)
   } catch {
     return []
   }
@@ -76,7 +89,7 @@ export const useFinanceStore = defineStore('finance', {
       return this.todayTotal - this.todayExpenses
     },
 
-    /** Saldo geral: todas as vendas - todas as despesas */
+    /** Saldo geral: todas as vendas - todas as despesas (patrimônio total) */
     totalBalance(state) {
       const sales = state.transactions
         .filter((t) => t.type === 'SALE')
@@ -85,6 +98,31 @@ export const useFinanceStore = defineStore('finance', {
         .filter((t) => t.type === 'EXPENSE')
         .reduce((sum, t) => sum + t.amount, 0)
       return sales - expenses
+    },
+
+    /** Dinheiro no bolso: só vendas recebidas (PAID) - despesas */
+    receivedBalance(state) {
+      const paidSales = state.transactions
+        .filter((t) => t.type === 'SALE' && (t.status === 'PAID' || !t.status))
+        .reduce((sum, t) => sum + t.amount, 0)
+      const expenses = state.transactions
+        .filter((t) => t.type === 'EXPENSE')
+        .reduce((sum, t) => sum + t.amount, 0)
+      return paidSales - expenses
+    },
+
+    /** Total a receber: vendas PENDING */
+    totalPendingAmount(state) {
+      return state.transactions
+        .filter((t) => t.type === 'SALE' && t.status === 'PENDING')
+        .reduce((sum, t) => sum + t.amount, 0)
+    },
+
+    /** Lista de vendas a receber (para cobrança), ordenada por dueDate */
+    pendingTransactions(state) {
+      return state.transactions
+        .filter((t) => t.type === 'SALE' && t.status === 'PENDING')
+        .sort((a, b) => new Date(a.dueDate || a.date) - new Date(b.dueDate || b.date))
     },
 
     /** Lista de vendas de hoje para a tela Histórico (mais recente primeiro) */
@@ -104,7 +142,11 @@ export const useFinanceStore = defineStore('finance', {
             time: timeStr,
             itemsSummary,
             items: t.items,
-            total: t.amount
+            total: t.amount,
+            status: t.status ?? 'PAID',
+            saleType: t.saleType ?? 'DIRECT',
+            dueDate: t.dueDate,
+            clientName: t.clientName
           }
         })
     },
@@ -120,7 +162,9 @@ export const useFinanceStore = defineStore('finance', {
      */
     transactionsGroupedByDate(state) {
       const byDate = new Map()
-      const sorted = [...state.transactions].sort((a, b) => new Date(b.date) - new Date(a.date))
+      const sorted = [...state.transactions]
+        .map(normalizeTransaction)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
       for (const t of sorted) {
         const d = new Date(t.date)
         const dateStr = d.toISOString().slice(0, 10)
@@ -146,24 +190,31 @@ export const useFinanceStore = defineStore('finance', {
     /**
      * Registra uma venda.
      * @param {CartItem[]} items
+     * @param {{ status?: 'PAID'|'PENDING', dueDate?: string, saleType?: 'DIRECT'|'RESALE', clientName?: string }} options
      */
-    registerSale(items) {
+    registerSale(items, options = {}) {
       const amount = items.reduce((s, i) => s + i.price * i.qty, 0)
       const id = String(Date.now())
       const count = items.reduce((s, i) => s + i.qty, 0)
-      this.transactions.push({
+      const status = options.status ?? 'PAID'
+      const saleType = options.saleType ?? 'DIRECT'
+      this.transactions.push(normalizeTransaction({
         id,
         type: 'SALE',
         amount,
         description: count === 1 ? 'Venda (1 item)' : `Venda (${count} itens)`,
         date: new Date().toISOString(),
+        status,
+        dueDate: options.dueDate,
+        saleType,
+        clientName: options.clientName,
         items: items.map(({ productId, name, price, qty }) => ({
           productId,
           name,
           price,
           qty
         }))
-      })
+      }))
       saveToStorage(this.transactions)
     },
 
@@ -186,6 +237,14 @@ export const useFinanceStore = defineStore('finance', {
     /** Remove uma transação por ID. Atualiza saldo e histórico via reatividade. */
     removeTransaction(id) {
       this.transactions = this.transactions.filter((t) => t.id !== id)
+      saveToStorage(this.transactions)
+    },
+
+    /** Atualiza uma transação (ex.: marcar como recebido). */
+    updateTransaction(id, patch) {
+      const i = this.transactions.findIndex((t) => t.id === id)
+      if (i === -1) return
+      this.transactions[i] = normalizeTransaction({ ...this.transactions[i], ...patch })
       saveToStorage(this.transactions)
     }
   }

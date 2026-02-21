@@ -2,14 +2,20 @@
 import { ref, computed } from 'vue'
 import { useProductsStore } from '@/stores/products'
 import { useFinanceStore } from '@/stores/finance'
-import { Minus, Plus, Check } from 'lucide-vue-next'
+import { Minus, Plus, Check, X } from 'lucide-vue-next'
 
 const productsStore = useProductsStore()
 const financeStore = useFinanceStore()
 
 const cart = ref({})
 const showSuccess = ref(false)
+const showSaleDetailsModal = ref(false)
 const imageError = ref({})
+
+const saleType = ref('DIRECT')
+const saleStatus = ref('PAID')
+const saleDueDate = ref('')
+const saleClientName = ref('')
 function onImageError(productId) {
   imageError.value[productId] = true
   imageError.value = { ...imageError.value }
@@ -56,8 +62,29 @@ function qty(productId) {
 
 function confirmarVenda() {
   if (!hasItems.value) return
-  financeStore.registerSale(cartItems.value)
+  showSaleDetailsModal.value = true
+  saleType.value = 'DIRECT'
+  saleStatus.value = 'PAID'
+  saleDueDate.value = ''
+  saleClientName.value = ''
+}
+
+function closeSaleDetailsModal() {
+  showSaleDetailsModal.value = false
+}
+
+function registrarVendaComDetalhes() {
+  const options = {
+    saleType: saleType.value,
+    status: saleStatus.value
+  }
+  if (saleStatus.value === 'PENDING') {
+    if (saleDueDate.value) options.dueDate = saleDueDate.value
+    if (saleClientName.value?.trim()) options.clientName = saleClientName.value.trim()
+  }
+  financeStore.registerSale(cartItems.value, options)
   cart.value = {}
+  closeSaleDetailsModal()
   showSuccess.value = true
   setTimeout(() => {
     showSuccess.value = false
@@ -178,6 +205,115 @@ function confettiStyle(i) {
         CONFIRMAR VENDA
       </button>
     </footer>
+
+    <!-- Modal: Tipo e Status da venda (antes de registrar) -->
+    <Teleport to="body">
+      <div
+        v-if="showSaleDetailsModal"
+        class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-brand-brown/40"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Detalhes da venda"
+        @click.self="closeSaleDetailsModal"
+      >
+        <div
+          class="w-full max-w-md bg-brand-cream rounded-t-3xl sm:rounded-3xl shadow-soft-lg max-h-[85vh] overflow-y-auto"
+          @click.stop
+        >
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="font-display text-big text-brand-brown">Como foi a venda?</h2>
+              <button
+                type="button"
+                class="min-w-[44px] min-h-[44px] rounded-2xl text-brand-brown/70 hover:bg-ui-white flex items-center justify-center"
+                aria-label="Fechar"
+                @click="closeSaleDetailsModal"
+              >
+                <X class="w-6 h-6" stroke-width="2" />
+              </button>
+            </div>
+            <p class="text-brand-brown/80 text-sm mb-3">Total: {{ formatBRL(total) }}</p>
+
+            <div class="space-y-4">
+              <div>
+                <p class="text-sm font-bold text-brand-brown mb-2">Tipo de venda</p>
+                <div class="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    class="min-h-[48px] rounded-xl font-semibold text-sm border-2 transition-colors"
+                    :class="saleType === 'DIRECT' ? 'bg-brand-red text-white border-brand-red' : 'bg-ui-white text-brand-brown border-brand-brown/20 hover:border-brand-brown/40'"
+                    @click="saleType = 'DIRECT'"
+                  >
+                    Venda Direta
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[48px] rounded-xl font-semibold text-sm border-2 transition-colors"
+                    :class="saleType === 'RESALE' ? 'bg-brand-red text-white border-brand-red' : 'bg-ui-white text-brand-brown border-brand-brown/20 hover:border-brand-brown/40'"
+                    @click="saleType = 'RESALE'"
+                  >
+                    Revenda
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <p class="text-sm font-bold text-brand-brown mb-2">Recebimento</p>
+                <div class="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    class="min-h-[48px] rounded-xl font-semibold text-sm border-2 transition-colors"
+                    :class="saleStatus === 'PAID' ? 'bg-brand-red text-white border-brand-red' : 'bg-ui-white text-brand-brown border-brand-brown/20 hover:border-brand-brown/40'"
+                    @click="saleStatus = 'PAID'"
+                  >
+                    Recebido
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[48px] rounded-xl font-semibold text-sm border-2 transition-colors"
+                    :class="saleStatus === 'PENDING' ? 'bg-brand-red text-white border-brand-red' : 'bg-ui-white text-brand-brown border-brand-brown/20 hover:border-brand-brown/40'"
+                    @click="saleStatus = 'PENDING'"
+                  >
+                    A Receber
+                  </button>
+                </div>
+              </div>
+
+              <template v-if="saleStatus === 'PENDING'">
+                <div>
+                  <label for="sale-due" class="block text-sm font-bold text-brand-brown mb-1">Vencimento</label>
+                  <input
+                    id="sale-due"
+                    v-model="saleDueDate"
+                    type="date"
+                    class="w-full rounded-xl border-2 border-brand-brown/20 px-4 py-2.5 text-touch text-brand-brown focus:border-brand-red focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label for="sale-client" class="block text-sm font-bold text-brand-brown mb-1">Cliente / Parceiro</label>
+                  <input
+                    id="sale-client"
+                    v-model="saleClientName"
+                    type="text"
+                    class="w-full rounded-xl border-2 border-brand-brown/20 px-4 py-2.5 text-touch text-brand-brown focus:border-brand-red focus:outline-none"
+                    placeholder="Ex: Cantina da Escola"
+                  />
+                </div>
+              </template>
+            </div>
+
+            <button
+              type="button"
+              class="w-full min-h-[50px] mt-6 rounded-2xl bg-brand-red hover:bg-brand-red-hover text-ui-white font-bold flex items-center justify-center gap-2"
+              @click="registrarVendaComDetalhes"
+            >
+              <Check class="w-5 h-5" stroke-width="2" />
+              Registrar venda
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Modal de sucesso: check verde + confetes -->
     <Teleport to="body">

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useFinanceStore } from '@/stores/finance'
-import { History, TrendingUp, TrendingDown, Wallet, Plus, X, Trash2 } from 'lucide-vue-next'
+import { History, TrendingUp, TrendingDown, Wallet, Plus, X, Trash2, Clock, CheckCircle } from 'lucide-vue-next'
 
 const financeStore = useFinanceStore()
 
@@ -9,6 +9,9 @@ const todayTotal = computed(() => financeStore.todayTotal)
 const todayExpenses = computed(() => financeStore.todayExpenses)
 const todayBalance = computed(() => financeStore.todayBalance)
 const totalBalance = computed(() => financeStore.totalBalance)
+const receivedBalance = computed(() => financeStore.receivedBalance)
+const totalPendingAmount = computed(() => financeStore.totalPendingAmount)
+const pendingTransactions = computed(() => financeStore.pendingTransactions)
 const todayList = computed(() => financeStore.todaySalesList)
 const groupedByDate = computed(() => financeStore.transactionsGroupedByDate)
 
@@ -58,12 +61,26 @@ function confirmRemoveTransaction(id, amount) {
   showToastMessage()
 }
 
-function showToastMessage() {
+const toastMessage = ref('Lançamento apagado!')
+function showToastMessage(msg = 'Lançamento apagado!') {
+  toastMessage.value = msg
   showToast.value = true
   if (toastTimer) clearTimeout(toastTimer)
   toastTimer = setTimeout(() => {
     showToast.value = false
   }, 2500)
+}
+
+function markAsPaid(id) {
+  financeStore.updateTransaction(id, { status: 'PAID' })
+  showToastMessage('Marcado como recebido!')
+}
+
+function statusLabel(status) {
+  return status === 'PENDING' ? 'A Receber' : 'Recebido'
+}
+function saleTypeLabel(saleType) {
+  return saleType === 'RESALE' ? 'Revenda' : 'Direta'
 }
 </script>
 
@@ -101,9 +118,20 @@ function showToastMessage() {
           <Wallet class="w-5 h-5 text-brand-red" stroke-width="2" />
         </div>
         <div class="min-w-0 flex-1">
-          <p class="text-brand-brown/80 text-sm">Saldo geral</p>
-          <p class="text-xl font-bold" :class="totalBalance >= 0 ? 'text-brand-red' : 'text-brand-brown'">
-            {{ formatBRL(totalBalance) }}
+          <p class="text-brand-brown/80 text-sm">Saldo recebido (no bolso)</p>
+          <p class="text-xl font-bold" :class="receivedBalance >= 0 ? 'text-brand-red' : 'text-brand-brown'">
+            {{ formatBRL(receivedBalance) }}
+          </p>
+        </div>
+      </div>
+      <div class="rounded-3xl bg-ui-white shadow-soft p-4 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-brand-cream flex items-center justify-center shrink-0">
+          <Clock class="w-5 h-5 text-amber-600" stroke-width="2" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-brand-brown/80 text-sm">A receber</p>
+          <p class="text-xl font-bold text-amber-700">
+            {{ formatBRL(totalPendingAmount) }}
           </p>
         </div>
       </div>
@@ -134,7 +162,18 @@ function showToastMessage() {
           <p class="font-semibold text-brand-brown">
             {{ sale.time }} – {{ sale.itemsSummary }}
           </p>
-          <p class="text-brand-red font-bold">
+          <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+            <span
+              class="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+              :class="sale.status === 'PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'"
+            >
+              {{ statusLabel(sale.status) }}
+            </span>
+            <span class="text-[10px] text-brand-brown/70">
+              {{ saleTypeLabel(sale.saleType) }}
+            </span>
+          </div>
+          <p class="text-brand-red font-bold mt-0.5">
             {{ formatBRL(sale.total) }}
           </p>
         </div>
@@ -150,6 +189,52 @@ function showToastMessage() {
     </ul>
     <div v-else class="rounded-2xl bg-ui-white shadow-soft p-4 mb-8">
       <p class="text-brand-brown/60 text-center text-sm">Nenhuma venda registrada hoje.</p>
+    </div>
+
+    <!-- A Receber (cobrança) -->
+    <h2 class="text-brand-brown font-bold text-touch mb-2">A Receber</h2>
+    <div v-if="pendingTransactions.length > 0" class="rounded-2xl bg-amber-50 border border-amber-200/80 shadow-soft overflow-hidden mb-8">
+      <p class="px-4 py-2 text-amber-800/90 text-xs font-medium">
+        Toque em "Recebido" quando o cliente pagar.
+      </p>
+      <ul class="divide-y divide-amber-200/60" role="list">
+        <li
+          v-for="tx in pendingTransactions"
+          :key="tx.id"
+          class="px-4 py-3 flex items-center justify-between gap-3 flex-wrap"
+        >
+          <div class="min-w-0 flex-1">
+            <p class="font-semibold text-brand-brown">
+              {{ tx.clientName || tx.description }}
+            </p>
+            <p class="text-xs text-brand-brown/60">
+              Vencimento: {{ tx.dueDate ? new Date(tx.dueDate).toLocaleDateString('pt-BR') : '—' }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <p class="font-bold text-amber-700">{{ formatBRL(tx.amount) }}</p>
+            <button
+              type="button"
+              class="min-h-[40px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              @click="markAsPaid(tx.id)"
+            >
+              <CheckCircle class="w-4 h-4" stroke-width="2" />
+              Recebido
+            </button>
+            <button
+              type="button"
+              class="min-w-[40px] min-h-[40px] p-2 rounded-xl text-red-400 hover:bg-red-50 flex items-center justify-center"
+              :aria-label="`Excluir ${formatBRL(tx.amount)}`"
+              @click="confirmRemoveTransaction(tx.id, tx.amount)"
+            >
+              <Trash2 class="w-5 h-5" stroke-width="2" />
+            </button>
+          </div>
+        </li>
+      </ul>
+    </div>
+    <div v-else class="rounded-2xl bg-ui-white shadow-soft p-4 mb-8">
+      <p class="text-brand-brown/60 text-center text-sm">Nada a receber no momento.</p>
     </div>
 
     <!-- Histórico agrupado por data -->
@@ -183,7 +268,22 @@ function showToastMessage() {
                 <p class="font-medium text-brand-brown truncate text-sm">
                   {{ tx.description }}
                 </p>
-                <p class="text-xs text-brand-brown/60">
+                <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+                  <span
+                    v-if="isSale(tx)"
+                    class="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                    :class="(tx.status || 'PAID') === 'PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'"
+                  >
+                    {{ statusLabel(tx.status || 'PAID') }}
+                  </span>
+                  <span
+                    v-if="isSale(tx)"
+                    class="text-[10px] text-brand-brown/60"
+                  >
+                    {{ saleTypeLabel(tx.saleType || 'DIRECT') }}
+                  </span>
+                </div>
+                <p class="text-xs text-brand-brown/60 mt-0.5">
                   {{ new Date(tx.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }}
                 </p>
               </div>
@@ -296,7 +396,7 @@ function showToastMessage() {
         role="status"
         aria-live="polite"
       >
-        Lançamento apagado!
+        {{ toastMessage }}
       </div>
     </Transition>
   </div>
